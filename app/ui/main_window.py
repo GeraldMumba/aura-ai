@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
     QPushButton, QPlainTextEdit, QStackedWidget, QTextBrowser, QVBoxLayout,
-    QWidget, QSplitter
+    QWidget, QSplitter, QInputDialog
 )
 
 from app.ai.agent import AuraAgent
@@ -17,6 +17,7 @@ from app.ai.code_generator import CodeGenerator
 from app.ai.ollama_client import OllamaClient
 from app.desktop.tools import get_system_overview, get_top_processes
 from app.files.file_tools import search_files, read_text_file
+from app.files.change_manager import ChangeManager
 from app.database.db import (
     add_message, create_conversation, get_messages, list_conversations,
     update_conversation_title,
@@ -78,6 +79,7 @@ class MainWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self.workspace_path = Path.home() / "Projects"
+        self.change_manager = None
         self._build_ui()
         self._apply_theme()
         self._load_conversations()
@@ -229,6 +231,18 @@ class MainWindow(QMainWindow):
         bar.addWidget(choose)
         bar.addWidget(refresh)
         layout.addLayout(bar)
+        change_bar = QHBoxLayout()
+        self.edit_file_button = QPushButton("Propose edit")
+        self.edit_file_button.clicked.connect(self._propose_edit_selected)
+        self.create_file_button = QPushButton("New file")
+        self.create_file_button.clicked.connect(self._propose_create_file)
+        self.delete_file_button = QPushButton("Move to trash")
+        self.delete_file_button.clicked.connect(self._propose_delete_selected)
+        change_bar.addWidget(self.edit_file_button)
+        change_bar.addWidget(self.create_file_button)
+        change_bar.addWidget(self.delete_file_button)
+        change_bar.addStretch(1)
+        layout.addLayout(change_bar)
         split = QSplitter(Qt.Orientation.Horizontal)
         self.file_list = QListWidget()
         self.file_list.itemClicked.connect(self._open_file)
@@ -444,6 +458,7 @@ class MainWindow(QMainWindow):
         chosen = QFileDialog.getExistingDirectory(self, "Choose project folder", str(self.workspace_path))
         if chosen:
             self.workspace_path = Path(chosen).expanduser().resolve()
+            self.change_manager = None
             self.workspace_label.setText(str(self.workspace_path))
             self._refresh_files()
 
@@ -495,3 +510,95 @@ class MainWindow(QMainWindow):
             self.thread.quit()
             self.thread.wait(2500)
         super().closeEvent(event)
+
+
+    def _get_change_manager(self):
+        if self.change_manager is None:
+            self.change_manager = ChangeManager(self.workspace_path)
+        return self.change_manager
+
+    def _selected_file_path(self):
+        item = self.file_list.currentItem()
+        if item is None:
+            QMessageBox.information(self, "Projects & Files", "Select a file first.")
+            return None
+        return Path(item.data(Qt.ItemDataRole.UserRole))
+
+    def _confirm_proposal(self, proposal):
+        preview = proposal.get("preview", {})
+        diff = preview.get("diff") or preview.get("description") or "No text diff is available."
+        target = preview.get("target", preview.get("destination", "Selected item"))
+        message = (
+            f"Proposed operation: {proposal.get('action', 'change')}\n"
+            f"Target: {target}\n\n"
+            "Review the preview carefully. Nothing has been changed yet.\n\n"
+            f"{diff[:12000]}\n\n"
+            "Approve and apply this change?"
+        )
+        answer = QMessageBox.question(
+            self, "Review proposed change", message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self._get_change_manager().cancel(proposal["id"])
+            QMessageBox.information(self, "Change cancelled", "No files were changed.")
+            return
+        try:
+            result = self._get_change_manager().approve(proposal["id"])
+            QMessageBox.information(
+                self, "Change approved",
+                f"The operation was applied.\n\n{result.get('result', {})}",
+            )
+            self._refresh_files()
+        except Exception as exc:
+            QMessageBox.critical(self, "Change not applied", str(exc))
+
+    def _propose_edit_selected(self):
+        path = self._selected_file_path()
+        if path is None:
+            return
+        try:
+            current = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            QMessageBox.warning(self, "Cannot edit file", str(exc))
+            return
+        new_content, accepted = QInputDialog.getMultiLineText(
+            self, "Propose file edit",
+            "Edit the file contents. A diff preview appears before approval:",
+            current,
+        )
+        if not accepted:
+            return
+        try:
+            proposal = self._get_change_manager().propose_edit_file(path, new_content)
+            self._confirm_proposal(proposal)
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not create proposal", str(exc))
+
+    def _propose_create_file(self):
+        relative_path, accepted = QInputDialog.getText(
+            self, "Create file", "New file path relative to selected workspace:"
+        )
+        if not accepted or not relative_path.strip():
+            return
+        content, content_accepted = QInputDialog.getMultiLineText(
+            self, "New file contents", "Enter initial text for the new file:"
+        )
+        if not content_accepted:
+            return
+        try:
+            proposal = self._get_change_manager().propose_create_file(relative_path.strip(), content)
+            self._confirm_proposal(proposal)
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not create proposal", str(exc))
+
+    def _propose_delete_selected(self):
+        path = self._selected_file_path()
+        if path is None:
+            return
+        try:
+            proposal = self._get_change_manager().propose_delete(path)
+            self._confirm_proposal(proposal)
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not create proposal", str(exc))
