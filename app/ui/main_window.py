@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ai.ollama_client import OllamaClient, OllamaError
+from app.ai.agent import AuraAgent
 from app.database.db import (
     add_message,
     create_conversation,
@@ -37,7 +38,7 @@ class ChatWorker(QObject):
 
     def run(self) -> None:
         try:
-            self.finished.emit(self.client.chat(self.messages))
+            self.finished.emit(AuraAgent(client=self.client).run(self.messages))
         except OllamaError as exc:
             self.failed.emit(str(exc))
         except Exception as exc:  # Keep unexpected worker errors visible to the UI.
