@@ -48,9 +48,14 @@ def initialize_database() -> None:
 
 
 def create_conversation(title: str = "New conversation") -> int:
+    # Supply timestamps explicitly so this also works with databases created
+    # by older AURA versions whose columns may not have DEFAULT values.
     with get_connection() as connection:
         cursor = connection.execute(
-            "INSERT INTO conversations(title) VALUES (?)",
+            """
+            INSERT INTO conversations(title, created_at, updated_at)
+            VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
             (title[:100],),
         )
         return int(cursor.lastrowid)
@@ -61,7 +66,10 @@ def add_message(conversation_id: int, role: str, content: str) -> int:
         raise ValueError("Unsupported message role")
     with get_connection() as connection:
         cursor = connection.execute(
-            "INSERT INTO messages(conversation_id, role, content) VALUES (?, ?, ?)",
+            """
+            INSERT INTO messages(conversation_id, role, content, created_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """,
             (conversation_id, role, content),
         )
         connection.execute(
