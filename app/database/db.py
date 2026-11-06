@@ -107,3 +107,110 @@ def update_conversation_title(conversation_id: int, title: str) -> None:
             "UPDATE conversations SET title=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (title[:100], conversation_id),
         )
+
+
+# Workspace-scoped persistence for safe file-change proposals.
+import json as _json
+from datetime import datetime as _datetime
+
+
+def initialize_change_tables():
+    with get_connection() as connection:
+        connection.executescript("""
+            CREATE TABLE IF NOT EXISTS pending_changes (
+                id TEXT PRIMARY KEY,
+                workspace_root TEXT NOT NULL,
+                proposal_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_pending_workspace
+                ON pending_changes(workspace_root);
+            CREATE TABLE IF NOT EXISTS change_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_root TEXT NOT NULL,
+                change_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                status TEXT NOT NULL,
+                details_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_change_history_workspace
+                ON change_history(workspace_root, id DESC);
+        """)
+
+
+def _workspace_key(workspace_root):
+    return str(Path(workspace_root).expanduser().resolve())
+
+
+def save_pending_change(workspace_root, proposal):
+    key = _workspace_key(workspace_root)
+    with get_connection() as connection:
+        connection.execute(
+            """INSERT OR REPLACE INTO pending_changes
+               (id, workspace_root, proposal_json, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (proposal["id"], key, _json.dumps(proposal, ensure_ascii=False), proposal["created_at"]),
+        )
+
+
+def get_pending_changes(workspace_root):
+    key = _workspace_key(workspace_root)
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT proposal_json FROM pending_changes WHERE workspace_root=? ORDER BY created_at",
+            (key,),
+        ).fetchall()
+    results = []
+    for row in rows:
+        try:
+            value = _json.loads(row["proposal_json"])
+            if isinstance(value, dict):
+                results.append(value)
+        except (ValueError, TypeError):
+            continue
+    return results
+
+
+def delete_pending_change(change_id, workspace_root):
+    with get_connection() as connection:
+        cursor = connection.execute(
+            "DELETE FROM pending_changes WHERE id=? AND workspace_root=?",
+            (change_id, _workspace_key(workspace_root)),
+        )
+        return cursor.rowcount > 0
+
+
+def record_change_history(workspace_root, change_id, action, status, details=None):
+    timestamp = _datetime.now().isoformat(timespec="seconds")
+    with get_connection() as connection:
+        connection.execute(
+            """INSERT INTO change_history
+               (workspace_root, change_id, action, status, details_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (_workspace_key(workspace_root), change_id, action, status,
+             _json.dumps(details or {}, ensure_ascii=False, default=str), timestamp),
+        )
+
+
+def get_change_history(workspace_root, limit=50):
+    limit = max(1, min(int(limit), 500))
+    with get_connection() as connection:
+        rows = connection.execute(
+            """SELECT change_id, action, status, details_json, created_at
+               FROM change_history WHERE workspace_root=?
+               ORDER BY id DESC LIMIT ?""",
+            (_workspace_key(workspace_root), limit),
+        ).fetchall()
+    result = []
+    for row in rows:
+        try:
+            details = _json.loads(row["details_json"])
+        except (ValueError, TypeError):
+            details = {}
+        result.append({
+            "change_id": row["change_id"], "action": row["action"],
+            "status": row["status"], "details": details,
+            "created_at": row["created_at"],
+        })
+    return result
