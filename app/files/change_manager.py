@@ -12,7 +12,7 @@ from typing import Any
 
 from app.database.db import (
     delete_pending_change, get_change_history, get_pending_changes,
-    initialize_database, record_change_history, save_pending_change,
+    initialize_database, initialize_change_tables, record_change_history, save_pending_change,
 )
 
 
@@ -31,6 +31,7 @@ class ChangeManager:
             raise ValueError("Workspace must be a directory.")
         self.pending: dict[str, dict[str, Any]] = {}
         initialize_database()
+        initialize_change_tables()
         self._load_pending()
 
     def _path(self, value: str | Path) -> Path:
