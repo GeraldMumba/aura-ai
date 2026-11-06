@@ -11,6 +11,8 @@ class OllamaError(RuntimeError):
 
 
 class OllamaClient:
+    """Small Ollama HTTP client supporting chat and native tool calling."""
+
     def __init__(
         self,
         base_url: str | None = None,
@@ -31,28 +33,41 @@ class OllamaClient:
             )
             response.raise_for_status()
             payload = response.json()
-            return [item.get("name", "") for item in payload.get("models", [])]
+            return [
+                item.get("name", "")
+                for item in payload.get("models", [])
+                if isinstance(item, dict) and item.get("name")
+            ]
         except (requests.RequestException, ValueError) as exc:
             raise OllamaError(f"Could not reach Ollama: {exc}") from exc
 
-    def chat(
+    def chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
         *,
         model: str | None = None,
         num_ctx: int = 2048,
         num_predict: int = 512,
-    ) -> str:
+    ) -> dict[str, Any]:
+        """Return Ollama's complete /api/chat response, including tool_calls.
+
+        This method is used by AURA's agent loop. Tool execution remains
+        controlled by the application; this method only requests a response.
+        """
         payload: dict[str, Any] = {
             "model": model or self.model,
             "messages": messages,
             "stream": False,
             "keep_alive": "5m",
             "options": {
-                "num_ctx": max(512, min(num_ctx, 8192)),
-                "num_predict": max(64, min(num_predict, 2048)),
+                "num_ctx": max(512, min(int(num_ctx), 8192)),
+                "num_predict": max(64, min(int(num_predict), 2048)),
             },
         }
+        if tools:
+            payload["tools"] = tools
+
         try:
             response = self.session.post(
                 f"{self.base_url}/api/chat",
@@ -61,10 +76,9 @@ class OllamaClient:
             )
             response.raise_for_status()
             data = response.json()
-            content = data.get("message", {}).get("content", "")
-            if not isinstance(content, str) or not content.strip():
-                raise OllamaError("Ollama returned an empty response.")
-            return content.strip()
+            if not isinstance(data, dict) or not isinstance(data.get("message"), dict):
+                raise OllamaError("Ollama returned an invalid chat response.")
+            return data
         except requests.Timeout as exc:
             raise OllamaError(
                 "Ollama took too long to respond. Try a smaller model or shorter prompt."
@@ -75,3 +89,23 @@ class OllamaClient:
             ) from exc
         except ValueError as exc:
             raise OllamaError("Ollama returned invalid JSON.") from exc
+
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str | None = None,
+        num_ctx: int = 2048,
+        num_predict: int = 512,
+    ) -> str:
+        """Send a normal chat request and return assistant text."""
+        result = self.chat_completion(
+            messages,
+            model=model,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+        )
+        content = result.get("message", {}).get("content", "")
+        if not isinstance(content, str) or not content.strip():
+            raise OllamaError("Ollama returned an empty response.")
+        return content.strip()
