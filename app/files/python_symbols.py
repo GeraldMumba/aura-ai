@@ -9,9 +9,11 @@ from app.files.project_index_store import _safe_content
 from app.files.file_tools import _validate_directory, _walk_files
 
 MAX_PYTHON_FILE_BYTES = 512 * 1024
-MAX_PROJECT_FILES = 300
-MAX_SYMBOLS = 500
-MAX_CALLS_PER_SYMBOL = 40
+MAX_PROJECT_FILES = 150
+MAX_SYMBOLS = 120
+MAX_CALLS_PER_SYMBOL = 10
+MAX_TOTAL_CALLS = 160
+MAX_IMPORTS_PER_FILE = 30
 
 
 class _SymbolVisitor(ast.NodeVisitor):
@@ -135,12 +137,16 @@ def analyze_python_project(root: str | Path, max_files: int = MAX_PROJECT_FILES)
             continue
         analyses.append(analyze_python_source(source, relative))
 
-    all_symbols = [symbol for item in analyses for symbol in item["symbols"]]
+    all_symbols = [symbol for item in analyses for symbol in item["symbols"]][:MAX_SYMBOLS]
     by_name: dict[str, list[str]] = defaultdict(list)
     for symbol in all_symbols:
         by_name[symbol["name"]].append(f'{symbol["file"]}:{symbol["qualified_name"]}')
 
+    total_calls = 0
     for symbol in all_symbols:
+        remaining = max(0, MAX_TOTAL_CALLS - total_calls)
+        symbol["calls"] = symbol["calls"][:remaining]
+        total_calls += len(symbol["calls"])
         for call in symbol["calls"]:
             candidates = by_name.get(call["name"], [])
             call["candidates"] = candidates[:3]
@@ -159,8 +165,8 @@ def analyze_python_project(root: str | Path, max_files: int = MAX_PROJECT_FILES)
             for item in analyses if item["parse_error"]
         ],
         "modules": [
-            {"file": item["file"], "imports": item["imports"]}
-            for item in analyses if item["imports"]
+            {"file": item["file"], "imports": item["imports"][:MAX_IMPORTS_PER_FILE]}
+            for item in analyses[:MAX_PROJECT_FILES] if item["imports"]
         ],
         "symbols": all_symbols[:MAX_SYMBOLS],
         "relationship_note": (
