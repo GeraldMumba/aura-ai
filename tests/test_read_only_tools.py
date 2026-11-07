@@ -117,7 +117,7 @@ def test_analyze_python_project_is_exposed_as_read_only_tool(tmp_path: Path, mon
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "main.py").write_text(
-        "def main():\\n    return 'ready'\\n", encoding="utf-8"
+        "def main():\n    return 'ready'\n", encoding="utf-8"
     )
 
     result = json.loads(execute_tool("analyze_python_project", {"root": str(workspace)}))
