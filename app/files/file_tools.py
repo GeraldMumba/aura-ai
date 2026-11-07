@@ -180,3 +180,60 @@ def read_text_file(path: str | Path, start_line: int = 1, end_line: int | None =
         "content": "\n".join(f"{start_line + index}: {line}" for index, line in enumerate(safe_lines)),
         "truncated": end_line < len(lines),
     }
+
+
+def search_file_contents(root, query, extensions=None, max_results=12, max_scan=1500, context_lines=2):
+    """Search supported text files and return bounded, line-numbered excerpts."""
+    directory = _validate_directory(root)
+    query = str(query).strip()
+    if len(query) < 2:
+        raise ValueError("Search query must contain at least two characters.")
+    if len(query) > 200:
+        raise ValueError("Search query is too long (maximum 200 characters).")
+    max_results = max(1, min(int(max_results), 30))
+    max_scan = max(1, min(int(max_scan), 10000))
+    context_lines = max(0, min(int(context_lines), 4))
+    allowed = ALLOWED_TEXT_EXTENSIONS
+    if extensions:
+        requested = {ext.lower() if ext.startswith(".") else "." + ext.lower() for ext in extensions}
+        allowed = allowed.intersection(requested)
+    matches, scanned, truncated = [], 0, False
+    needle = query.casefold()
+    for path in _walk_files(directory):
+        if path.suffix.lower() not in allowed:
+            continue
+        if path.name.lower() in SENSITIVE_NAMES or path.suffix.lower() in SENSITIVE_SUFFIXES:
+            continue
+        if scanned >= max_scan:
+            truncated = True
+            break
+        scanned += 1
+        try:
+            if path.stat().st_size > 512 * 1024:
+                continue
+            content = path.read_text(encoding="utf-8", errors="replace")
+            if "\x00" in content:
+                continue
+        except (OSError, UnicodeError):
+            continue
+        lines = content.splitlines()
+        for index, line in enumerate(lines):
+            if needle not in line.casefold():
+                continue
+            start, end = max(0, index - context_lines), min(len(lines), index + context_lines + 1)
+            excerpt = []
+            for line_index in range(start, end):
+                selected = lines[line_index]
+                if SECRET_PATTERN.search(selected) and re.search(r"[:=]", selected):
+                    selected = "[REDACTED: possible secret]"
+                excerpt.append(f"{line_index + 1}: {selected[:500]}")
+            matches.append({"path": str(path), "line": index + 1, "excerpt": "\n".join(excerpt)})
+            if len(matches) >= max_results:
+                truncated = True
+                break
+        if len(matches) >= max_results:
+            break
+    return {
+        "directory": str(directory), "query": query, "files_scanned": scanned,
+        "matches_found": len(matches), "truncated": truncated, "results": matches,
+    }
