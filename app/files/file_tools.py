@@ -19,9 +19,20 @@ ALLOWED_TEXT_EXTENSIONS = {
 }
 SENSITIVE_NAMES = {
     ".env", ".env.local", ".env.production", "credentials",
-    "credentials.json", "secrets.json", "id_rsa", "id_ed25519",
+    "credentials.json", "secrets.json", "token.json", "id_rsa", "id_ed25519",
 }
 SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore"}
+SENSITIVE_DIR_NAMES = {"tokens", "secrets", ".ssh"}
+
+
+def is_sensitive_path(path: str | Path) -> bool:
+    """Return True for known credential files and files inside secret directories."""
+    candidate = Path(path)
+    if candidate.name.lower() in SENSITIVE_NAMES:
+        return True
+    if candidate.suffix.lower() in SENSITIVE_SUFFIXES:
+        return True
+    return any(part.lower() in SENSITIVE_DIR_NAMES for part in candidate.parts[:-1])
 SECRET_PATTERN = re.compile(
     r"(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token|"
     r"auth[_-]?token|private[_-]?key|client[_-]?secret)\b"
@@ -152,7 +163,7 @@ def read_text_file(path: str | Path, start_line: int = 1, end_line: int | None =
     file_path = requested.resolve()
     if not file_path.is_file():
         raise ValueError("File does not exist or is not a regular file.")
-    if file_path.name.lower() in SENSITIVE_NAMES or file_path.suffix.lower() in SENSITIVE_SUFFIXES:
+    if is_sensitive_path(file_path):
         raise ValueError("Reading this sensitive file is not permitted.")
     if file_path.suffix.lower() not in ALLOWED_TEXT_EXTENSIONS:
         raise ValueError("This file type is not supported for text reading.")
@@ -202,7 +213,7 @@ def search_file_contents(root, query, extensions=None, max_results=12, max_scan=
     for path in _walk_files(directory):
         if path.suffix.lower() not in allowed:
             continue
-        if path.name.lower() in SENSITIVE_NAMES or path.suffix.lower() in SENSITIVE_SUFFIXES:
+        if is_sensitive_path(path):
             continue
         if scanned >= max_scan:
             truncated = True
