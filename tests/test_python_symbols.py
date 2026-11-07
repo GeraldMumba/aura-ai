@@ -56,6 +56,8 @@ def test_analyze_python_project_builds_bounded_static_call_candidates(tmp_path: 
     call = next(item for item in main["calls"] if item["name"] == "authenticate")
     assert call["resolution"] == "unique_candidate"
     assert call["candidates"] == ["auth.py:authenticate"]
+    module = next(item for item in result["symbols"] if item["file"] == "main.py" and item["kind"] == "module")
+    assert any(item["name"] == "main" for item in module["calls"])
     assert "must-not-be-read" not in str(result)
     assert "static name-based candidates" in result["relationship_note"]
 
