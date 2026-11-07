@@ -301,6 +301,9 @@ class AuraAgent:
                     "Use this exact directory as the root for project-analysis tools."
                 ),
             })
+        project_evidence = self._project_understanding_context(workspace_root, latest)
+        if project_evidence:
+            conversation.append({"role": "system", "content": project_evidence})
         workspace_context = self._workspace_context(workspace_root, latest)
         if workspace_context:
             conversation.append({"role": "system", "content": workspace_context})
