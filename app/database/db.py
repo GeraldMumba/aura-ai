@@ -115,7 +115,50 @@ from datetime import datetime as _datetime
 
 
 def initialize_change_tables():
+    """Create the current workspace-scoped tables, preserving legacy tables.
+
+    Older AURA experiments used the same table names with different columns.
+    SQLite's CREATE TABLE IF NOT EXISTS does not update those schemas, so
+    detect incompatible tables and retain them under legacy names before
+    creating the current schema.
+    """
+    required = {
+        "pending_changes": {"id", "workspace_root", "proposal_json", "created_at"},
+        "change_history": {
+            "id", "workspace_root", "change_id", "action",
+            "status", "details_json", "created_at",
+        },
+    }
     with get_connection() as connection:
+        for table, columns in required.items():
+            exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+            if exists:
+                actual = {
+                    row["name"] for row in connection.execute(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()
+                }
+                if not columns.issubset(actual):
+                    # Remove known index names before renaming so they can be
+                    # recreated against the new table rather than the legacy one.
+                    index_name = (
+                        "idx_pending_workspace" if table == "pending_changes"
+                        else "idx_change_history_workspace"
+                    )
+                    connection.execute(f"DROP INDEX IF EXISTS {index_name}")
+                    legacy = f"{table}_legacy"
+                    suffix = 1
+                    while connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                        (legacy,),
+                    ).fetchone():
+                        suffix += 1
+                        legacy = f"{table}_legacy_{suffix}"
+                    connection.execute(f"ALTER TABLE {table} RENAME TO {legacy}")
+
         connection.executescript("""
             CREATE TABLE IF NOT EXISTS pending_changes (
                 id TEXT PRIMARY KEY,
