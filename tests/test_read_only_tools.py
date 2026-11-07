@@ -40,3 +40,49 @@ def test_execute_tool_rejects_unknown_and_extra_arguments():
         execute_tool("delete_file", {})
     with pytest.raises(ValueError, match="Unsupported"):
         execute_tool("get_memory_info", {"path": "/tmp"})
+
+
+
+def test_search_file_contents_returns_line_numbered_matches(tmp_path: Path):
+    from app.files.file_tools import search_file_contents
+
+    source = tmp_path / "module.py"
+    source.write_text("class Example:\n    def run(self):\n        return 'needle'\n", encoding="utf-8")
+    result = search_file_contents(tmp_path, "needle", context_lines=1)
+
+    assert result["matches_found"] == 1
+    assert result["results"][0]["line"] == 3
+    assert "3:         return 'needle'" in result["results"][0]["excerpt"]
+    assert "2:     def run(self):" in result["results"][0]["excerpt"]
+
+
+def test_search_file_contents_redacts_secret_lines(tmp_path: Path):
+    from app.files.file_tools import search_file_contents
+
+    source = tmp_path / "settings.py"
+    source.write_text("api_key = 'do-not-leak'\nprint('api_key')\n", encoding="utf-8")
+    result = search_file_contents(tmp_path, "api_key", context_lines=0)
+
+    assert result["matches_found"] == 2
+    assert "do-not-leak" not in str(result["results"])
+    assert "[REDACTED: possible secret]" in result["results"][0]["excerpt"]
+
+
+def test_search_file_contents_skips_sensitive_files_and_large_files(tmp_path: Path):
+    from app.files.file_tools import search_file_contents
+
+    (tmp_path / "module.py").write_text("needle = True", encoding="utf-8")
+    (tmp_path / ".env").write_text("needle=secret", encoding="utf-8")
+    (tmp_path / "large.py").write_text("needle" + ("x" * (512 * 1024)), encoding="utf-8")
+
+    result = search_file_contents(tmp_path, "needle")
+
+    assert result["matches_found"] == 1
+    assert result["results"][0]["path"].endswith("module.py")
+
+
+def test_search_file_contents_validates_query(tmp_path: Path):
+    from app.files.file_tools import search_file_contents
+
+    with pytest.raises(ValueError, match="at least two"):
+        search_file_contents(tmp_path, "x")
