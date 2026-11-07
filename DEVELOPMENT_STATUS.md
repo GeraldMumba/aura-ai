@@ -19,8 +19,10 @@
 - [x] File search, metadata, and bounded text reading
 - [x] Safe change proposals, previews, approval, backups, and trash
 - [x] Project metadata scanner and language/framework overview
-- [ ] Searchable project index and symbol-aware retrieval
-- [ ] Connect project context to chat and coding workflows
+- [x] Bounded source-content search exposed as a read-only AI tool
+- [ ] Searchable project index with cached results and refresh controls
+- [ ] Connect selected workspace context to chat and coding workflows
+- [ ] Symbol-aware retrieval and file relationship analysis
 - [ ] Safe multi-file edit proposals and diffs
 - [ ] Controlled test/debug workflow
 - [ ] Model and application settings UI
@@ -29,8 +31,8 @@
 
 ## Current project-understanding milestone
 
-AURA can now produce a deterministic, metadata-only project overview. It excludes hidden folders, virtual environments, common build/cache directories, symbolic links, and sensitive credential files. It does not send project files to Ollama. Searchable content indexing and bounded context retrieval are the next steps.
+AURA can scan project metadata and search supported source/text files for exact text matches. Content search returns a small number of line-numbered excerpts, skips hidden/generated and sensitive files, ignores files over 512 KB, and redacts likely secret assignments. It is a bounded read-only tool available to the AI; it does not write files or execute commands.
 
 ## Current limitations
 
-Project analysis currently identifies common languages and framework manifests; it does not yet build a symbol graph or infer all dependencies. The scan is bounded to 10,000 files by default.
+Content search is literal, not semantic. It does not yet build a persistent cache, understand language symbols, or automatically attach project context to every chat. Those are separate next steps.
