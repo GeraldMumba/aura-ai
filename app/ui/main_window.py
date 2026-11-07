@@ -19,6 +19,7 @@ from app.ai.ollama_client import OllamaClient
 from app.desktop.tools import get_system_overview, get_top_processes
 from app.files.file_tools import search_files, read_text_file
 from app.files.change_manager import ChangeManager
+from app.files.project_index import analyze_project, format_project_report
 from app.database.db import (
     add_message, create_conversation, get_messages, list_conversations,
     update_conversation_title,
@@ -42,6 +43,8 @@ class TaskWorker(QObject):
                     self.payload["request"], self.payload.get("language", "Python"),
                     self.payload.get("context", "")
                 )
+            elif self.task == "index":
+                result = format_project_report(analyze_project(self.payload["root"]))
             else:
                 raise ValueError("Unknown background task.")
             self.finished.emit(result)
@@ -257,6 +260,18 @@ class MainWindow(QMainWindow):
         split.addWidget(self.file_view)
         split.setSizes([360, 700])
         layout.addWidget(split, 1)
+        analysis_bar = QHBoxLayout()
+        analyze = QPushButton("Analyze project")
+        analyze.clicked.connect(self._analyze_workspace)
+        analysis_bar.addWidget(QLabel("Project understanding"))
+        analysis_bar.addStretch(1)
+        analysis_bar.addWidget(analyze)
+        layout.addLayout(analysis_bar)
+        self.project_report = QPlainTextEdit()
+        self.project_report.setReadOnly(True)
+        self.project_report.setMaximumHeight(210)
+        self.project_report.setPlaceholderText("Choose Analyze project to inspect languages, frameworks, file types and largest files. This scan is local and metadata-only.")
+        layout.addWidget(self.project_report)
         self._refresh_files()
         return page
 
@@ -395,6 +410,7 @@ class MainWindow(QMainWindow):
     def _start_task(self, task: str, payload: dict):
         if self.thread and self.thread.isRunning():
             return
+        self.active_task = task
         self.thread = QThread(self)
         self.worker = TaskWorker(task, self.client, payload)
         self.worker.moveToThread(self.thread)
@@ -436,7 +452,9 @@ class MainWindow(QMainWindow):
 
     def _task_finished(self, result: str):
         current_page = self.pages.currentIndex()
-        if current_page == self.page_index["code"] and not self.generate_button.isEnabled():
+        if self.active_task == "index":
+            self.project_report.setPlainText(result)
+        elif current_page == self.page_index["code"] and not self.generate_button.isEnabled():
             self.code_output.setPlainText(result)
             self.propose_generated_button.setEnabled(
                 bool(re.search(r"\x60\x60\x60[\w+#.-]*\s*\n[\s\S]+?\n\x60\x60\x60", result))
@@ -466,6 +484,13 @@ class MainWindow(QMainWindow):
             self.thread.deleteLater()
         self.worker = None
         self.thread = None
+
+    def _analyze_workspace(self):
+        if self.thread and self.thread.isRunning():
+            QMessageBox.information(self, "Project analysis", "Wait for the current task to finish first.")
+            return
+        self.project_report.setPlainText("Scanning project metadata locally…")
+        self._start_task("index", {"root": str(self.workspace_path)})
 
     def _choose_workspace(self):
         chosen = QFileDialog.getExistingDirectory(self, "Choose project folder", str(self.workspace_path))
