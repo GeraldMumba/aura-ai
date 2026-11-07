@@ -21,7 +21,9 @@
 - [x] Project metadata scanner and language/framework overview
 - [x] Bounded source-content search exposed as a read-only AI tool
 - [x] Persistent local project index with refresh and cached source search
-- [ ] Connect selected workspace context to chat and coding workflows
+- [x] Explicit workspace index refresh from the desktop UI
+- [x] Relevant indexed excerpts attached to chat for the selected workspace
+- [ ] Extend selected workspace context to code-generation and debugging workflows
 - [ ] Symbol-aware retrieval and file relationship analysis
 - [ ] Safe multi-file edit proposals and diffs
 - [ ] Controlled test/debug workflow
