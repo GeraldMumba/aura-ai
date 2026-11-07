@@ -41,7 +41,7 @@ def test_analyze_python_project_builds_bounded_static_call_candidates(tmp_path: 
         "def authenticate():\n    return True\n", encoding="utf-8"
     )
     (tmp_path / "main.py").write_text(
-        "from auth import authenticate\n\ndef main():\n    authenticate()\n",
+        "from auth import authenticate\n\ndef main():\n    authenticate()\n\nif __name__ == \"__main__\":\n    main()\n",
         encoding="utf-8",
     )
     (tmp_path / "token.json").write_text(
