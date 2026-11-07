@@ -238,9 +238,12 @@ class MainWindow(QMainWindow):
         self.create_file_button.clicked.connect(self._propose_create_file)
         self.delete_file_button = QPushButton("Move to trash")
         self.delete_file_button.clicked.connect(self._propose_delete_selected)
+        self.recovery_button = QPushButton("Recovery")
+        self.recovery_button.clicked.connect(self._open_recovery)
         change_bar.addWidget(self.edit_file_button)
         change_bar.addWidget(self.create_file_button)
         change_bar.addWidget(self.delete_file_button)
+        change_bar.addWidget(self.recovery_button)
         change_bar.addStretch(1)
         layout.addLayout(change_bar)
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -602,3 +605,48 @@ class MainWindow(QMainWindow):
             self._confirm_proposal(proposal)
         except Exception as exc:
             QMessageBox.warning(self, "Could not create proposal", str(exc))
+
+
+    def _open_recovery(self):
+        try:
+            manager = self._get_change_manager()
+            trash_items = manager.list_trash()
+            backups = manager.list_backups()
+        except Exception as exc:
+            QMessageBox.warning(self, "Recovery", str(exc))
+            return
+
+        choices = []
+        for item in trash_items:
+            choices.append((
+                f"TRASH  |  {item['original_path']}  |  {item['id'][:8]}",
+                "trash", item["id"],
+            ))
+        for item in backups:
+            choices.append((
+                f"BACKUP |  {item['original_path']}  |  {item['id'][:8]}",
+                "backup", item["id"],
+            ))
+
+        if not choices:
+            QMessageBox.information(
+                self, "Recovery", "There are currently no recoverable deleted files or backups."
+            )
+            return
+
+        labels = [item[0] for item in choices]
+        selected, accepted = QInputDialog.getItem(
+            self, "AURA Recovery", "Choose an item to restore:", labels, 0, False
+        )
+        if not accepted or not selected:
+            return
+
+        choice = next(item for item in choices if item[0] == selected)
+        try:
+            if choice[1] == "trash":
+                proposal = manager.propose_restore_trash(choice[2])
+            else:
+                proposal = manager.propose_restore_backup(choice[2])
+            self._confirm_proposal(proposal)
+        except Exception as exc:
+            QMessageBox.warning(self, "Cannot restore item", str(exc))
