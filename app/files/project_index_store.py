@@ -10,6 +10,7 @@ from app.files.file_tools import (
     SECRET_PATTERN,
     SENSITIVE_NAMES,
     SENSITIVE_SUFFIXES,
+    is_sensitive_path,
     _validate_directory,
     _walk_files,
 )
@@ -20,7 +21,7 @@ MAX_QUERY_LENGTH = 200
 
 
 def _safe_content(path: Path) -> str | None:
-    if path.name.lower() in SENSITIVE_NAMES or path.suffix.lower() in SENSITIVE_SUFFIXES:
+    if is_sensitive_path(path):
         return None
     if path.suffix.lower() not in ALLOWED_TEXT_EXTENSIONS:
         return None
