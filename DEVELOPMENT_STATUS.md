@@ -33,9 +33,13 @@
 
 ## Current project-understanding milestone
 
-AURA can build and refresh a local SQLite index of supported source/text files in a selected workspace. Search returns compact line-numbered excerpts from the cached index. Hidden/generated and sensitive files are excluded, files larger than 512 KB are skipped, and likely secret assignments are redacted before content is stored. The index is workspace-scoped and can be rebuilt to remove stale/deleted files.
+AURA can build and refresh a local SQLite index of supported source/text files in a selected workspace. Search returns compact line-numbered excerpts from the cached index. Hidden/generated and sensitive files are excluded, files larger than 512 KB are skipped, and likely secret assignments are redacted before content is stored. The index is workspace-scoped and can be rebuilt to remove stale/deleted files. OAuth token files (`token.json` and files inside `tokens/`, `secrets/`, or `.ssh/`) are excluded from indexing and direct text reading.
 
 The index is exposed to AURA through read-only tool calls. It does not execute commands or modify project files.
+
+## Security hardening update
+
+Known OAuth token files and files inside credential directories are now excluded from project indexing, direct text reading, and source-content search. Refresh the selected workspace index after updating so previously cached token-file entries are removed.
 
 ## Current limitations
 
