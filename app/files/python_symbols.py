@@ -36,6 +36,8 @@ class _SymbolVisitor(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
+            if len(self.imports) >= 100:
+                break
             self.imports.append({
                 "module": alias.name,
                 "name": alias.asname or alias.name.split(".")[0],
@@ -45,6 +47,8 @@ class _SymbolVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = "." * node.level + (node.module or "")
         for alias in node.names:
+            if len(self.imports) >= 100:
+                break
             if alias.name == "*":
                 continue
             self.imports.append({
@@ -54,6 +58,8 @@ class _SymbolVisitor(ast.NodeVisitor):
             })
 
     def _visit_definition(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef, kind: str) -> None:
+        if len(self.symbols) >= MAX_SYMBOLS:
+            return
         qualified_name = ".".join([*self.scope, node.name])
         symbol: dict[str, Any] = {
             "file": self.relative_path,
