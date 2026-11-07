@@ -86,3 +86,24 @@ def test_search_file_contents_validates_query(tmp_path: Path):
 
     with pytest.raises(ValueError, match="at least two"):
         search_file_contents(tmp_path, "x")
+
+
+def test_token_files_are_blocked_from_reading_and_content_search(tmp_path: Path):
+    from app.files.file_tools import search_file_contents
+
+    token_dir = tmp_path / "tokens"
+    token_dir.mkdir()
+    token_file = token_dir / "account_gmail_com.json"
+    token_file.write_text('{"refresh_token": "do-not-read"}', encoding="utf-8")
+    root_token = tmp_path / "token.json"
+    root_token.write_text('{"refresh_token": "also-private"}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="sensitive"):
+        read_text_file(token_file)
+    with pytest.raises(ValueError, match="sensitive"):
+        read_text_file(root_token)
+
+    result = search_file_contents(tmp_path, "refresh_token")
+    assert result["matches_found"] == 0
+    assert "do-not-read" not in str(result)
+    assert "also-private" not in str(result)
