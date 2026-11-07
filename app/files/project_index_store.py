@@ -8,8 +8,6 @@ from app.database.db import get_connection
 from app.files.file_tools import (
     ALLOWED_TEXT_EXTENSIONS,
     SECRET_PATTERN,
-    SENSITIVE_NAMES,
-    SENSITIVE_SUFFIXES,
     is_sensitive_path,
     _validate_directory,
     _walk_files,
