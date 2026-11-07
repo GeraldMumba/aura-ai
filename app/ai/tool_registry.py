@@ -10,7 +10,7 @@ from app.desktop.tools import (
 )
 from app.files.file_tools import (
     get_directory_size, get_file_info, get_largest_files,
-    read_text_file, search_files,
+    read_text_file, search_file_contents, search_files,
 )
 
 HOME = Path.home().resolve()
@@ -25,6 +25,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "get_file_info", "description": "Get metadata about a file under the user's home directory.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "get_largest_files", "description": "Find the largest files in a directory under the user's home directory.", "parameters": {"type": "object", "properties": {"root": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["root"]}}},
     {"type": "function", "function": {"name": "get_directory_size", "description": "Calculate storage usage for a directory under the user's home directory.", "parameters": {"type": "object", "properties": {"root": {"type": "string"}}, "required": ["root"]}}},
+    {"type": "function", "function": {"name": "search_file_contents", "description": "Search supported text files under the user's home directory and return bounded line-numbered excerpts. Likely secrets are redacted.", "parameters": {"type": "object", "properties": {"root": {"type": "string"}, "query": {"type": "string"}, "extensions": {"type": "array", "items": {"type": "string"}}, "max_results": {"type": "integer"}, "max_scan": {"type": "integer"}, "context_lines": {"type": "integer"}}, "required": ["root", "query"]}}},
     {"type": "function", "function": {"name": "read_text_file", "description": "Read a supported text file under the user's home directory. Sensitive files are blocked.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["path"]}}},
 ]
 
@@ -39,6 +40,7 @@ FUNCTIONS = {
     "get_largest_files": get_largest_files,
     "get_directory_size": get_directory_size,
     "read_text_file": read_text_file,
+    "search_file_contents": search_file_contents,
 }
 
 ARGUMENTS = {
@@ -52,6 +54,7 @@ ARGUMENTS = {
     "get_largest_files": {"root", "limit"},
     "get_directory_size": {"root"},
     "read_text_file": {"path", "start_line", "end_line"},
+    "search_file_contents": {"root", "query", "extensions", "max_results", "max_scan", "context_lines"},
 }
 
 
