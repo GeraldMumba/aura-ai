@@ -156,7 +156,7 @@ class AuraAgent:
             return ""
         query_lower = query.casefold()
         intent_terms = (
-            "explain", "how", "trace", "flow", "architecture", "entry point",
+            "explain", "trace", "flow", "architecture", "entry point", "project",
             "authentication", "authenticate", "login", "account", "token",
             "function", "relationship", "data flow", "works",
         )
