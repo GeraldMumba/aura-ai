@@ -467,7 +467,9 @@ class MainWindow(QMainWindow):
             self._load_conversations()
 
     def _task_failed(self, error: str):
-        if hasattr(self, "code_output") and not self.generate_button.isEnabled():
+        if self.active_task == "index":
+            self.project_report.setPlainText("Project analysis failed: " + error)
+        elif hasattr(self, "code_output") and not self.generate_button.isEnabled():
             self.code_output.setPlainText("Generation failed: " + error)
             self.propose_generated_button.setEnabled(False)
         else:
@@ -484,6 +486,7 @@ class MainWindow(QMainWindow):
             self.thread.deleteLater()
         self.worker = None
         self.thread = None
+        self.active_task = None
 
     def _analyze_workspace(self):
         if self.thread and self.thread.isRunning():
