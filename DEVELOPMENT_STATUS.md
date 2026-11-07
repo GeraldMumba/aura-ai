@@ -20,7 +20,7 @@
 - [x] Safe change proposals, previews, approval, backups, and trash
 - [x] Project metadata scanner and language/framework overview
 - [x] Bounded source-content search exposed as a read-only AI tool
-- [ ] Searchable project index with cached results and refresh controls
+- [x] Persistent local project index with refresh and cached source search
 - [ ] Connect selected workspace context to chat and coding workflows
 - [ ] Symbol-aware retrieval and file relationship analysis
 - [ ] Safe multi-file edit proposals and diffs
@@ -31,8 +31,10 @@
 
 ## Current project-understanding milestone
 
-AURA can scan project metadata and search supported source/text files for exact text matches. Content search returns a small number of line-numbered excerpts, skips hidden/generated and sensitive files, ignores files over 512 KB, and redacts likely secret assignments. It is a bounded read-only tool available to the AI; it does not write files or execute commands.
+AURA can build and refresh a local SQLite index of supported source/text files in a selected workspace. Search returns compact line-numbered excerpts from the cached index. Hidden/generated and sensitive files are excluded, files larger than 512 KB are skipped, and likely secret assignments are redacted before content is stored. The index is workspace-scoped and can be rebuilt to remove stale/deleted files.
+
+The index is exposed to AURA through read-only tool calls. It does not execute commands or modify project files.
 
 ## Current limitations
 
-Content search is literal, not semantic. It does not yet build a persistent cache, understand language symbols, or automatically attach project context to every chat. Those are separate next steps.
+Search is literal rather than semantic. The index must be explicitly built or refreshed after project files change. Automatic context attachment, symbol-aware retrieval, and relationship analysis remain future milestones.
