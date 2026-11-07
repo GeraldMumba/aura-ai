@@ -183,6 +183,15 @@ class AuraAgent:
             ),
         }
         conversation = [system]
+        if workspace_root:
+            selected_root = str(Path(workspace_root).expanduser())
+            conversation.append({
+                "role": "system",
+                "content": (
+                    f"Selected workspace root: {selected_root}. "
+                    "Use this exact directory as the root for project-analysis tools."
+                ),
+            })
         workspace_context = self._workspace_context(workspace_root, latest)
         if workspace_context:
             conversation.append({"role": "system", "content": workspace_context})
