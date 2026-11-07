@@ -97,12 +97,18 @@ class ChangeManager:
     def _load_pending(self):
         for proposal in get_pending_changes(self.workspace_root):
             try:
-                if proposal.get("action") not in {"create_file", "edit_file", "create_folder", "delete"}:
+                action = proposal.get("action")
+                if action not in {"create_file", "edit_file", "create_folder", "delete", "restore_trash"}:
                     continue
                 details = proposal.get("details", {})
                 target = self._path(details["path"])
                 expected = details.get("expected")
-                if self._snapshot(target) == expected:
+                if action == "restore_trash":
+                    trash_path = self._trash_item_path(details["trash_id"])
+                    valid = self._snapshot(target) == expected and self._snapshot(trash_path) == details.get("trash_expected")
+                else:
+                    valid = self._snapshot(target) == expected
+                if valid:
                     self.pending[proposal["id"]] = proposal
             except (KeyError, TypeError, ValueError, OSError):
                 continue
@@ -196,6 +202,15 @@ class ChangeManager:
             metadata = {"id": trash_id, "original_path": str(target), "created_at": datetime.now().isoformat()}
             (destination.parent / f"{trash_id}.json").write_text(json.dumps(metadata), encoding="utf-8")
             result = {"trash_id": trash_id, "original_path": str(target)}
+        elif action == "restore_trash":
+            trash_path = self._trash_item_path(details["trash_id"])
+            if target.exists() or self._snapshot(trash_path) != details.get("trash_expected"):
+                raise ValueError("The restore destination or trash item changed after preview.")
+            shutil.move(str(trash_path), str(target))
+            metadata_path = trash_path.parent / f"{details['trash_id']}.json"
+            if metadata_path.exists():
+                metadata_path.unlink()
+            result = {"path": str(target), "restored_from_trash": details["trash_id"]}
         delete_pending_change(change_id, self.workspace_root)
         self.pending.pop(change_id, None)
         record_change_history(self.workspace_root, change_id, action, "approved",
@@ -244,3 +259,94 @@ class ChangeManager:
 
     def list_history(self, limit: int = 50) -> list[dict]:
         return get_change_history(self.workspace_root, limit=limit)
+
+
+    def _trash_item_path(self, trash_id: str) -> Path:
+        if not isinstance(trash_id, str) or len(trash_id) != 32 or any(
+            char not in "0123456789abcdef" for char in trash_id
+        ):
+            raise ValueError("Invalid trash identifier.")
+        root = self._internal_dir(".aura_trash")
+        item = root / trash_id
+        if item.is_symlink() or not item.exists():
+            raise FileNotFoundError("Trash item was not found.")
+        return item
+
+    def list_trash(self) -> list[dict]:
+        root = self.workspace_root / ".aura_trash"
+        if root.is_symlink() or not root.exists():
+            return []
+        items = []
+        for metadata_path in sorted(root.glob("*.json")):
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                trash_id = metadata.get("id", "")
+                item = self._trash_item_path(trash_id)
+                items.append({
+                    "id": trash_id,
+                    "original_path": metadata["original_path"],
+                    "created_at": metadata.get("created_at", ""),
+                    "is_directory": item.is_dir(),
+                })
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                continue
+        return items
+
+    def propose_restore_trash(self, trash_id: str) -> dict:
+        trash_path = self._trash_item_path(trash_id)
+        metadata_path = trash_path.parent / f"{trash_id}.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            target = self._path(metadata["original_path"])
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Trash metadata is invalid: {exc}") from exc
+        if target.exists():
+            raise FileExistsError("The original location is occupied. Move or rename that item first.")
+        if not target.parent.is_dir():
+            raise FileNotFoundError("The original parent folder no longer exists.")
+        return self._store(
+            "restore_trash",
+            {"path": str(target), "expected": None, "trash_id": trash_id,
+             "trash_expected": self._snapshot(trash_path)},
+            {"target": str(target), "description": f"Restore item {trash_id} from AURA trash."},
+        )
+
+    def list_backups(self) -> list[dict]:
+        root = self.workspace_root / ".aura_backups"
+        if root.is_symlink() or not root.exists():
+            return []
+        items = []
+        for metadata_path in sorted(root.glob("*/metadata.json")):
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                content = metadata_path.parent / "content"
+                if content.is_file() and not content.is_symlink():
+                    items.append({
+                        "id": metadata["id"],
+                        "original_path": metadata["original_path"],
+                        "created_at": metadata_path.stat().st_mtime,
+                    })
+            except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                continue
+        return items
+
+    def propose_restore_backup(self, backup_id: str) -> dict:
+        if not isinstance(backup_id, str) or len(backup_id) != 32 or any(
+            char not in "0123456789abcdef" for char in backup_id
+        ):
+            raise ValueError("Invalid backup identifier.")
+        root = self._internal_dir(".aura_backups")
+        folder = root / backup_id
+        metadata_path = folder / "metadata.json"
+        content_path = folder / "content"
+        if folder.is_symlink() or content_path.is_symlink() or metadata_path.is_symlink():
+            raise ValueError("Backup symbolic links are not permitted.")
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            target = self._path(metadata["original_path"])
+            content = content_path.read_text(encoding="utf-8")
+        except (OSError, ValueError, KeyError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Backup cannot be restored: {exc}") from exc
+        if not target.is_file():
+            raise FileNotFoundError("The original file no longer exists. Backup restoration only replaces existing files.")
+        return self.propose_edit_file(target, content)
