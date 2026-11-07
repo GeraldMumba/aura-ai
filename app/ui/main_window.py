@@ -37,7 +37,10 @@ class TaskWorker(QObject):
     def run(self):
         try:
             if self.task == "chat":
-                result = AuraAgent(client=self.client).run(self.payload["messages"])
+                result = AuraAgent(client=self.client).run(
+                    self.payload["messages"],
+                    workspace_root=self.payload.get("workspace_root"),
+                )
             elif self.task == "code":
                 result = CodeGenerator(client=self.client).generate(
                     self.payload["request"], self.payload.get("language", "Python"),
@@ -45,6 +48,17 @@ class TaskWorker(QObject):
                 )
             elif self.task == "index":
                 result = format_project_report(analyze_project(self.payload["root"]))
+            elif self.task == "project_index":
+                from app.files.project_index_store import build_project_index
+                result = build_project_index(self.payload["root"])
+                result = (
+                    "Searchable project index refreshed successfully.\\n"
+                    f"Workspace: {result['workspace']}\\n"
+                    f"Files scanned: {result['files_scanned']}\\n"
+                    f"Files indexed: {result['files_indexed']}\\n"
+                    f"Files skipped: {result['files_skipped']}\\n"
+                    f"Scan limit reached: {'yes' if result['truncated'] else 'no'}"
+                )
             else:
                 raise ValueError("Unknown background task.")
             self.finished.emit(result)
@@ -263,9 +277,12 @@ class MainWindow(QMainWindow):
         analysis_bar = QHBoxLayout()
         analyze = QPushButton("Analyze project")
         analyze.clicked.connect(self._analyze_workspace)
+        self.build_index_button = QPushButton("Build / Refresh search index")
+        self.build_index_button.clicked.connect(self._build_project_index)
         analysis_bar.addWidget(QLabel("Project understanding"))
         analysis_bar.addStretch(1)
         analysis_bar.addWidget(analyze)
+        analysis_bar.addWidget(self.build_index_button)
         layout.addLayout(analysis_bar)
         self.project_report = QPlainTextEdit()
         self.project_report.setReadOnly(True)
@@ -438,7 +455,10 @@ class MainWindow(QMainWindow):
         self.send_button.setEnabled(False)
         self.prompt_input.setEnabled(False)
         self.connection_label.setText("● AURA is thinking…")
-        self._start_task("chat", {"messages": messages})
+        self._start_task("chat", {
+            "messages": messages,
+            "workspace_root": str(self.workspace_path),
+        })
 
     def _generate_code(self):
         request = self.code_request.toPlainText().strip()
@@ -454,6 +474,9 @@ class MainWindow(QMainWindow):
         current_page = self.pages.currentIndex()
         if self.active_task == "index":
             self.project_report.setPlainText(result)
+        elif self.active_task == "project_index":
+            self.project_report.setPlainText(result)
+            self.build_index_button.setEnabled(True)
         elif current_page == self.page_index["code"] and not self.generate_button.isEnabled():
             self.code_output.setPlainText(result)
             self.propose_generated_button.setEnabled(
@@ -469,6 +492,9 @@ class MainWindow(QMainWindow):
     def _task_failed(self, error: str):
         if self.active_task == "index":
             self.project_report.setPlainText("Project analysis failed: " + error)
+        elif self.active_task == "project_index":
+            self.project_report.setPlainText("Search index refresh failed: " + error)
+            self.build_index_button.setEnabled(True)
         elif hasattr(self, "code_output") and not self.generate_button.isEnabled():
             self.code_output.setPlainText("Generation failed: " + error)
             self.propose_generated_button.setEnabled(False)
@@ -480,6 +506,8 @@ class MainWindow(QMainWindow):
         self.send_button.setEnabled(True)
         self.prompt_input.setEnabled(True)
         self.generate_button.setEnabled(True)
+        if hasattr(self, "build_index_button"):
+            self.build_index_button.setEnabled(True)
         if self.worker:
             self.worker.deleteLater()
         if self.thread:
@@ -494,6 +522,14 @@ class MainWindow(QMainWindow):
             return
         self.project_report.setPlainText("Scanning project metadata locally…")
         self._start_task("index", {"root": str(self.workspace_path)})
+
+    def _build_project_index(self):
+        if self.thread and self.thread.isRunning():
+            QMessageBox.information(self, "Project index", "Wait for the current task to finish first.")
+            return
+        self.build_index_button.setEnabled(False)
+        self.project_report.setPlainText("Building searchable project index locally…")
+        self._start_task("project_index", {"root": str(self.workspace_path)})
 
     def _choose_workspace(self):
         chosen = QFileDialog.getExistingDirectory(self, "Choose project folder", str(self.workspace_path))
