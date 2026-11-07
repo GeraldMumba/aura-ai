@@ -114,3 +114,30 @@ def test_project_understanding_context_failure_does_not_break_chat(monkeypatch, 
     assert AuraAgent._project_understanding_context(
         tmp_path, "Explain the authentication flow"
     ) == ""
+
+
+
+def test_agent_uses_longer_complete_answer_budget_and_privacy_guidance():
+    class FakeClient:
+        def __init__(self):
+            self.kwargs = None
+            self.messages = None
+
+        def chat_completion(self, messages, **kwargs):
+            self.messages = messages
+            self.kwargs = kwargs
+            return {"message": {"content": "Complete answer."}}
+
+    client = FakeClient()
+    agent = AuraAgent(client=client)
+
+    answer = agent.run([{
+        "role": "user",
+        "content": "Explain the authentication flow in this project",
+    }])
+
+    assert answer == "Complete answer."
+    assert client.kwargs["num_predict"] == 512
+    system_prompt = client.messages[0]["content"]
+    assert "Do not reproduce email addresses" in system_prompt
+    assert "exact line numbers" in system_prompt
