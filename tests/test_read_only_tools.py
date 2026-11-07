@@ -107,3 +107,20 @@ def test_token_files_are_blocked_from_reading_and_content_search(tmp_path: Path)
     assert result["matches_found"] == 0
     assert "do-not-read" not in str(result)
     assert "also-private" not in str(result)
+
+
+
+def test_analyze_python_project_is_exposed_as_read_only_tool(tmp_path: Path, monkeypatch):
+    import app.ai.tool_registry as registry
+
+    monkeypatch.setattr(registry, "HOME", tmp_path.resolve())
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "main.py").write_text(
+        "def main():\\n    return 'ready'\\n", encoding="utf-8"
+    )
+
+    result = json.loads(execute_tool("analyze_python_project", {"root": str(workspace)}))
+
+    assert result["files_analyzed"] == 1
+    assert any(item["qualified_name"] == "main" for item in result["symbols"])
