@@ -20,9 +20,19 @@ class _SymbolVisitor(ast.NodeVisitor):
     def __init__(self, relative_path: str):
         self.relative_path = relative_path
         self.scope: list[str] = []
-        self.symbols: list[dict[str, Any]] = []
+        module_symbol: dict[str, Any] = {
+            "file": relative_path,
+            "name": "<module>",
+            "qualified_name": "<module>",
+            "kind": "module",
+            "line": 1,
+            "end_line": None,
+            "docstring": "",
+            "calls": [],
+        }
+        self.symbols: list[dict[str, Any]] = [module_symbol]
         self.imports: list[dict[str, Any]] = []
-        self._symbol_stack: list[dict[str, Any]] = []
+        self._symbol_stack: list[dict[str, Any]] = [module_symbol]
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
