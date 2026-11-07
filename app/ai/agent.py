@@ -149,6 +149,115 @@ class AuraAgent:
             # Workspace context is optional; ordinary chat must still work if indexing fails.
             return ""
 
+    @staticmethod
+    def _project_understanding_context(root: str | Path | None, query: str) -> str:
+        """Collect bounded, deterministic Python source evidence before local reasoning."""
+        if not root:
+            return ""
+        query_lower = query.casefold()
+        intent_terms = (
+            "explain", "how", "trace", "flow", "architecture", "entry point",
+            "authentication", "authenticate", "login", "account", "token",
+            "function", "relationship", "data flow", "works",
+        )
+        if not any(term in query_lower for term in intent_terms):
+            return ""
+
+        try:
+            analysis = json.loads(execute_tool(
+                "analyze_python_project", {"root": str(root), "max_files": 100}
+            ))
+            symbols = analysis.get("symbols", [])
+            if not symbols:
+                return ""
+
+            auth_intent = any(term in query_lower for term in (
+                "auth", "login", "account", "gmail", "oauth", "token", "credential",
+            ))
+            flow_intent = any(term in query_lower for term in (
+                "flow", "trace", "entry", "how", "architecture", "data",
+            ))
+
+            candidates = []
+            for symbol in symbols:
+                if symbol.get("kind") not in {"function", "async_function"}:
+                    continue
+                name = str(symbol.get("name", "")).casefold()
+                qualified = str(symbol.get("qualified_name", "")).casefold()
+                searchable = f"{name} {qualified} {symbol.get('docstring', '')}".casefold()
+                score = 0
+                for token in re.findall(r"[a-z_][a-z0-9_]{2,}", query_lower):
+                    if token in searchable:
+                        score += 3
+                if auth_intent and any(term in searchable for term in (
+                    "auth", "login", "account", "gmail", "oauth", "token", "credential",
+                )):
+                    score += 8
+                if flow_intent and name in {"main", "run", "start", "launch", "cli"}:
+                    score += 6
+                if score:
+                    candidates.append((score, symbol))
+
+            candidates.sort(
+                key=lambda item: (
+                    -item[0],
+                    0 if item[1].get("name") == "main" else 1,
+                    item[1].get("file", ""),
+                    item[1].get("line", 0),
+                )
+            )
+            selected = []
+            seen = set()
+            for _, symbol in candidates:
+                key = (symbol.get("file"), symbol.get("qualified_name"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                selected.append(symbol)
+                if len(selected) >= 5:
+                    break
+            if not selected:
+                return ""
+
+            evidence = []
+            total_chars = 0
+            for symbol in selected:
+                start = int(symbol.get("line") or 1)
+                end = int(symbol.get("end_line") or start)
+                if end < start:
+                    continue
+                end = min(end, start + 119)
+                file_path = Path(root).expanduser() / str(symbol["file"])
+                raw = execute_tool("read_text_file", {
+                    "path": str(file_path),
+                    "start_line": start,
+                    "end_line": end,
+                })
+                data = json.loads(raw)
+                section = (
+                    f"FILE: {symbol['file']} | SYMBOL: {symbol.get('qualified_name')} "
+                    f"| LINES: {start}-{end}\n{data.get('content', '')}"
+                )
+                remaining = 7600 - total_chars
+                if remaining <= 0:
+                    break
+                section = section[:remaining]
+                evidence.append(section)
+                total_chars += len(section)
+            if not evidence:
+                return ""
+
+            return (
+                "Deterministically retrieved Python source evidence from the selected workspace. "
+                "These are actual source lines, not inferred call paths. Base specific claims on "
+                "this evidence, cite file paths and line ranges, and clearly label anything not "
+                "confirmed by the excerpts. Do not expose secrets.\n\n"
+                + "\n\n".join(evidence)
+            )
+        except Exception:
+            # Analysis is optional; failure must not prevent normal chat.
+            return ""
+
     def run(
         self,
         messages: list[dict[str, Any]],
