@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import html
+import re
 
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QFont
@@ -273,8 +274,12 @@ class MainWindow(QMainWindow):
         row.addWidget(self.code_language)
         self.generate_button = QPushButton("Generate code")
         self.generate_button.clicked.connect(self._generate_code)
+        self.propose_generated_button = QPushButton("Propose as new file")
+        self.propose_generated_button.clicked.connect(self._propose_generated_code)
+        self.propose_generated_button.setEnabled(False)
         row.addStretch(1)
         row.addWidget(self.generate_button)
+        row.addWidget(self.propose_generated_button)
         layout.addLayout(row)
         self.code_output = QPlainTextEdit()
         self.code_output.setReadOnly(True)
@@ -425,6 +430,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Code Assistant", "Describe the code you want to generate first.")
             return
         self.generate_button.setEnabled(False)
+        self.propose_generated_button.setEnabled(False)
         self.code_output.setPlainText("AURA is generating a draft…")
         self._start_task("code", {"request": request, "language": self.code_language.currentText()})
 
@@ -432,6 +438,9 @@ class MainWindow(QMainWindow):
         current_page = self.pages.currentIndex()
         if current_page == self.page_index["code"] and not self.generate_button.isEnabled():
             self.code_output.setPlainText(result)
+            self.propose_generated_button.setEnabled(
+                bool(re.search(r"\x60\x60\x60[\w+#.-]*\s*\n[\s\S]+?\n\x60\x60\x60", result))
+            )
         else:
             self._append_message("assistant", result)
             if self.conversation_id is not None:
@@ -442,6 +451,7 @@ class MainWindow(QMainWindow):
     def _task_failed(self, error: str):
         if hasattr(self, "code_output") and not self.generate_button.isEnabled():
             self.code_output.setPlainText("Generation failed: " + error)
+            self.propose_generated_button.setEnabled(False)
         else:
             self._append_message("assistant", "Error: " + error)
         self.connection_label.setText("● Ollama unavailable")
@@ -650,3 +660,28 @@ class MainWindow(QMainWindow):
             self._confirm_proposal(proposal)
         except Exception as exc:
             QMessageBox.warning(self, "Cannot restore item", str(exc))
+
+
+    def _propose_generated_code(self):
+        output = self.code_output.toPlainText()
+        match = re.search(r"\x60\x60\x60[\w+#.-]*\s*\n([\s\S]+?)\n\x60\x60\x60", output)
+        if not match:
+            QMessageBox.information(
+                self, "Code Assistant",
+                "AURA's response does not contain a fenced code block to save.",
+            )
+            return
+        code = match.group(1)
+        filename, accepted = QInputDialog.getText(
+            self, "Propose generated file",
+            "New file path relative to the selected workspace:",
+        )
+        if not accepted or not filename.strip():
+            return
+        try:
+            proposal = self._get_change_manager().propose_create_file(
+                filename.strip(), code + "\n"
+            )
+            self._confirm_proposal(proposal)
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not create proposal", str(exc))
