@@ -9,11 +9,11 @@ from app.files.project_index_store import _safe_content
 from app.files.file_tools import _validate_directory, _walk_files
 
 MAX_PYTHON_FILE_BYTES = 512 * 1024
-MAX_PROJECT_FILES = 150
-MAX_SYMBOLS = 120
-MAX_CALLS_PER_SYMBOL = 10
-MAX_TOTAL_CALLS = 160
-MAX_IMPORTS_PER_FILE = 30
+MAX_PROJECT_FILES = 100
+MAX_SYMBOLS = 40
+MAX_CALLS_PER_SYMBOL = 8
+MAX_TOTAL_CALLS = 50
+MAX_IMPORTS_PER_FILE = 15
 
 
 class _SymbolVisitor(ast.NodeVisitor):
