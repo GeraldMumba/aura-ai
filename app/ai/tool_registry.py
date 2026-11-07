@@ -13,6 +13,7 @@ from app.files.file_tools import (
     read_text_file, search_file_contents, search_files,
 )
 from app.files.project_index_store import build_project_index, search_project_index
+from app.files.python_symbols import analyze_python_project
 
 HOME = Path.home().resolve()
 
@@ -30,6 +31,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "read_text_file", "description": "Read a supported text file under the user's home directory. Sensitive files are blocked.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "build_project_index", "description": "Build or refresh a local searchable cache of a project’s supported source files. Use this before searching the project index if it has not been built or after files change. Sensitive files are excluded and likely secret assignments are redacted.", "parameters": {"type": "object", "properties": {"root": {"type": "string"}, "max_files": {"type": "integer"}}, "required": ["root"]}}},
     {"type": "function", "function": {"name": "search_project_index", "description": "Search the previously built local project index and return compact line-numbered code excerpts. Build or refresh the index first when needed.", "parameters": {"type": "object", "properties": {"root": {"type": "string"}, "query": {"type": "string"}, "max_results": {"type": "integer"}, "context_lines": {"type": "integer"}}, "required": ["root", "query"]}}},
+    {"type": "function", "function": {"name": "analyze_python_project", "description": "Statically inspect Python files in a project to list classes, functions, imports, line ranges and possible call relationships. Does not execute project code. Call relationships are approximate.", "parameters": {"type": "object", "properties": {"root": {"type": "string"}, "max_files": {"type": "integer"}}, "required": ["root"]}}},
 ]
 
 FUNCTIONS = {
@@ -46,6 +48,7 @@ FUNCTIONS = {
     "search_file_contents": search_file_contents,
     "build_project_index": build_project_index,
     "search_project_index": search_project_index,
+    "analyze_python_project": analyze_python_project,
 }
 
 ARGUMENTS = {
@@ -62,6 +65,7 @@ ARGUMENTS = {
     "search_file_contents": {"root", "query", "extensions", "max_results", "max_scan", "context_lines"},
     "build_project_index": {"root", "max_files"},
     "search_project_index": {"root", "query", "max_results", "context_lines"},
+    "analyze_python_project": {"root", "max_files"},
 }
 
 
