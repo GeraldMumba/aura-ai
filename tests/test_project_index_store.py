@@ -70,3 +70,26 @@ def test_project_index_rejects_short_queries(tmp_path: Path, monkeypatch):
     build_project_index(tmp_path)
     with pytest.raises(ValueError, match="at least two"):
         search_project_index(tmp_path, "x")
+
+
+def test_project_index_excludes_oauth_token_files_and_token_directories(tmp_path: Path, monkeypatch):
+    from app.database import db
+
+    monkeypatch.setattr(db, "APP_DIR", tmp_path / "data")
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "data" / "test.db")
+    (tmp_path / "main.py").write_text("def authenticate_gmail():\\n    return True\\n", encoding="utf-8")
+    (tmp_path / "credentials.json").write_text('{"client_secret": "private"}', encoding="utf-8")
+    (tmp_path / "token.json").write_text('{"refresh_token": "private"}', encoding="utf-8")
+    token_dir = tmp_path / "tokens"
+    token_dir.mkdir()
+    (token_dir / "account.json").write_text('{"refresh_token": "private"}', encoding="utf-8")
+
+    built = build_project_index(tmp_path)
+    status = get_project_index_status(tmp_path)
+    results = search_project_index(tmp_path, "authenticate")
+
+    assert built["files_indexed"] == 1
+    assert status["indexed_files"] == 1
+    assert results["matches_found"] == 1
+    assert results["results"][0]["relative_path"] == "main.py"
+    assert "private" not in str(results)
