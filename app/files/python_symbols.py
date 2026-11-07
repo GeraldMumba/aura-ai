@@ -68,7 +68,7 @@ class _SymbolVisitor(ast.NodeVisitor):
             "kind": kind,
             "line": node.lineno,
             "end_line": getattr(node, "end_lineno", node.lineno),
-            "docstring": (ast.get_docstring(node) or "").strip().splitlines()[0][:240],
+            "docstring": (ast.get_docstring(node) or "").strip().splitlines()[0][:240] if (ast.get_docstring(node) or "").strip().splitlines() else "",
             "calls": [],
         }
         self.symbols.append(symbol)
